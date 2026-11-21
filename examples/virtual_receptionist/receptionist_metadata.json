@@ -1,0 +1,121 @@
+{
+  "version": "1.0",
+  "agent": {
+    "name": "inbound-receptionist-agent",
+    "role": "receptionist",
+    "description": "Inbound Concierge & Front-Desk Receptionist Voice Agent"
+  },
+  "models": {
+    "provider": "gemini",
+    "model": "gemini-3.8-live",
+    "temperature": 0.7,
+    "top_p": 0.95,
+    "top_k": 40,
+    "max_output_tokens": 1024,
+    "modalities": [
+      "audio"
+    ],
+    "thinking": {
+      "enabled": false,
+      "reasoning_effort": "minimal",
+      "budget_tokens": 0,
+      "include_thoughts": false
+    },
+    "custom_vocabulary": [
+      "concierge",
+      "headquarters",
+      "extension",
+      "directory",
+      "department"
+    ]
+  },
+  "instructions": {
+    "system_prompt": "You are Morgan, the front-desk concierge and receptionist for Horizon Tower located at {address}. Greet all callers with professional warmth. Help callers by answering general inquiries regarding building hours ({building_hours}), office locations, and conference room reservations. If a caller asks to speak to an employee or department, take their message or provide the appropriate department contact information. Keep responses concise, welcoming, and polite.",
+    "first_turn": {
+      "speaker": "agent",
+      "mode": "say",
+      "text": "Good day! Thank you for calling Horizon Tower. My name is Morgan. How may I direct your call today?"
+    },
+    "context_data": {
+      "building_hours": "Monday through Friday from 7 AM to 7 PM",
+      "address": "100 Horizon Boulevard, Suite 500"
+    },
+    "spoken_dialogue_rules": true
+  },
+  "voice": {
+    "provider": "gemini",
+    "voice_id": "Aoede",
+    "language": "en-US",
+    "speed": 1.0
+  },
+  "vad": {
+    "provider": "native",
+    "disabled": false,
+    "silence_duration_ms": 1500,
+    "prefix_padding_ms": 300,
+    "threshold": 0.5
+  },
+  "turn_detection": {
+    "mode": "server_vad",
+    "allow_interruptions": true,
+    "min_interruption_duration_ms": 500,
+    "min_interruption_words": 2,
+    "resume_false_interruption": true,
+    "min_endpointing_delay_ms": 500,
+    "user_away_timeout_seconds": 20.0
+  },
+  "session": {
+    "max_duration_seconds": 900,
+    "inactivity_timeout_seconds": 90,
+    "participant_join_timeout_seconds": 30.0,
+    "delete_room_on_terminate": true,
+    "recording": {
+      "enabled": false,
+      "audio": true,
+      "traces": true
+    }
+  },
+  "tools": [
+    {
+      "name": "end_call",
+      "type": "builtin",
+      "description": "Gracefully ends the phone call when caller inquiry has been answered or caller says goodbye.",
+      "config": {
+        "delete_room": true,
+        "drain_timeout_seconds": 3.0,
+        "farewell_instruction": "Thank the caller for reaching out to Horizon Tower and wish them a wonderful day."
+      }
+    }
+  ],
+  "reporting": {
+    "enabled": true,
+    "endpoint": {
+      "url": "https://api.example.com/v1/telemetry/concierge",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer {{env:TELEMETRY_KEY}}"
+      },
+      "timeout_seconds": 10.0
+    },
+    "retry_policy": {
+      "max_retries": 3,
+      "initial_delay_ms": 1000,
+      "backoff_factor": 2.0
+    },
+    "security": {
+      "validate_ssrf": true,
+      "allow_local": false
+    },
+    "payload_config": {
+      "include_chat_history": true,
+      "include_model_usage": true,
+      "include_events": true,
+      "custom_fields": {
+        "location": "Horizon Tower Lobby"
+      }
+    }
+  },
+  "metadata": {
+    "facility": "horizon_hq"
+  }
+}

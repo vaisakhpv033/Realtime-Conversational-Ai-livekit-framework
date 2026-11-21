@@ -1,0 +1,25 @@
+# LiveKit Voice Agent Framework Deployment Stack
+# Connects outbound to LiveKit SFU (no inbound media ports required)
+
+services:
+  agent-framework:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agent-framework-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HEALTH_CHECK_HOST=0.0.0.0
+      - HEALTH_CHECK_PORT=${HEALTH_CHECK_PORT:-8081}
+    ports:
+      # Bound to localhost on port 8081 for worker health checks
+      - "127.0.0.1:${HEALTH_CHECK_PORT:-8081}:${HEALTH_CHECK_PORT:-8081}"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request, os; port = os.getenv('HEALTH_CHECK_PORT', '8081'); urllib.request.urlopen(f'http://127.0.0.1:{port}/').read()\" || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

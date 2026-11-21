@@ -1,0 +1,193 @@
+{
+  "version": "1.0",
+  "agent": {
+    "name": "universal-booking-agent",
+    "role": "scheduler",
+    "description": "Universal Appointment Booking Agent for Clinics, Salons, and Spas"
+  },
+  "models": {
+    "provider": "gemini",
+    "model": "gemini-3.8-live",
+    "temperature": 0.5,
+    "top_p": 0.95,
+    "top_k": 40,
+    "max_output_tokens": 1024,
+    "modalities": [
+      "audio"
+    ],
+    "thinking": {
+      "enabled": false,
+      "reasoning_effort": "minimal",
+      "budget_tokens": 0,
+      "include_thoughts": false
+    },
+    "custom_vocabulary": [
+      "consultation",
+      "reschedule",
+      "booking",
+      "practitioner",
+      "confirmation code"
+    ]
+  },
+  "instructions": {
+    "system_prompt": "You are Taylor, an appointment scheduling coordinator for {business_name} in {timezone}. Your purpose is to assist callers in booking new appointments, checking open time slots, and rescheduling existing bookings. First ask what service they need and their preferred date or time window. Use the check_availability tool to verify openings. Once a slot is agreed upon, collect the caller's full name and phone number, then call the book_appointment tool. Confirm the details back to the caller before concluding.",
+    "first_turn": {
+      "speaker": "agent",
+      "mode": "say",
+      "text": "Hello! Thank you for calling scheduling services. My name is Taylor. What type of appointment can I help you book today?"
+    },
+    "context_data": {
+      "business_name": "Metro Wellness Center",
+      "timezone": "America/New_York"
+    },
+    "spoken_dialogue_rules": true
+  },
+  "voice": {
+    "provider": "gemini",
+    "voice_id": "Puck",
+    "language": "en-US",
+    "speed": 1.05
+  },
+  "vad": {
+    "provider": "native",
+    "disabled": false,
+    "silence_duration_ms": 1500,
+    "prefix_padding_ms": 300,
+    "threshold": 0.5
+  },
+  "turn_detection": {
+    "mode": "server_vad",
+    "allow_interruptions": true,
+    "min_interruption_duration_ms": 500,
+    "min_interruption_words": 2,
+    "resume_false_interruption": true,
+    "min_endpointing_delay_ms": 500,
+    "user_away_timeout_seconds": 20.0
+  },
+  "session": {
+    "max_duration_seconds": 1200,
+    "inactivity_timeout_seconds": 120,
+    "participant_join_timeout_seconds": 30.0,
+    "delete_room_on_terminate": true,
+    "recording": {
+      "enabled": false,
+      "audio": true,
+      "traces": true
+    }
+  },
+  "tools": [
+    {
+      "name": "check_availability",
+      "type": "webhook",
+      "description": "Check available calendar appointment slots for a requested service type and date range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_type": {
+            "type": "string",
+            "description": "The category or type of service requested (e.g., consultation, therapy, styling)"
+          },
+          "date": {
+            "type": "string",
+            "description": "Preferred date in YYYY-MM-DD format"
+          }
+        },
+        "required": [
+          "service_type",
+          "date"
+        ]
+      },
+      "config": {
+        "url": "https://api.example.com/v1/appointments/availability",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer {{env:BOOKING_API_KEY}}",
+          "Content-Type": "application/json"
+        },
+        "timeout_seconds": 5.0
+      }
+    },
+    {
+      "name": "book_appointment",
+      "type": "webhook",
+      "description": "Finalize and book a confirmed appointment slot for the customer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_name": {
+            "type": "string",
+            "description": "Full name of the customer"
+          },
+          "phone": {
+            "type": "string",
+            "description": "Contact phone number"
+          },
+          "service_type": {
+            "type": "string",
+            "description": "Service booked"
+          },
+          "slot_time": {
+            "type": "string",
+            "description": "ISO-8601 appointment start timestamp"
+          }
+        },
+        "required": [
+          "customer_name",
+          "phone",
+          "service_type",
+          "slot_time"
+        ]
+      },
+      "config": {
+        "url": "https://api.example.com/v1/appointments/book",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer {{env:BOOKING_API_KEY}}",
+          "Content-Type": "application/json"
+        },
+        "timeout_seconds": 5.0
+      }
+    },
+    {
+      "name": "end_call",
+      "type": "builtin",
+      "description": "Gracefully concludes the call once appointment details have been confirmed or caller is finished.",
+      "config": {
+        "delete_room": true,
+        "drain_timeout_seconds": 3.0,
+        "farewell_instruction": "Confirm the appointment date and time one last time, thank the caller, and say goodbye."
+      }
+    }
+  ],
+  "reporting": {
+    "enabled": true,
+    "endpoint": {
+      "url": "https://api.example.com/v1/telemetry/bookings",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer {{env:TELEMETRY_KEY}}"
+      },
+      "timeout_seconds": 10.0
+    },
+    "retry_policy": {
+      "max_retries": 3,
+      "initial_delay_ms": 1000,
+      "backoff_factor": 2.0
+    },
+    "security": {
+      "validate_ssrf": true,
+      "allow_local": false
+    },
+    "payload_config": {
+      "include_chat_history": true,
+      "include_model_usage": true,
+      "include_events": true,
+      "custom_fields": {
+        "source": "inbound_booking_ivr"
+      }
+    }
+  },
+  "metadata": {
+    "organization_id": "org_metro_wellness_04"
+  }
+}

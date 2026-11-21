@@ -1,0 +1,150 @@
+{
+  "version": "1.0",
+  "agent": {
+    "name": "support-tier1-agent",
+    "role": "technical_support",
+    "description": "Tier 1 Technical and Billing Customer Support Voice Agent"
+  },
+  "models": {
+    "provider": "gemini",
+    "model": "gemini-3.8-live",
+    "temperature": 0.6,
+    "top_p": 0.95,
+    "top_k": 40,
+    "max_output_tokens": 1024,
+    "modalities": [
+      "audio"
+    ],
+    "thinking": {
+      "enabled": true,
+      "reasoning_effort": "low",
+      "budget_tokens": 1024,
+      "include_thoughts": false
+    },
+    "custom_vocabulary": [
+      "OAuth",
+      "webhook",
+      "API key",
+      "two-factor authentication",
+      "invoice",
+      "subscription tier",
+      "SSO"
+    ]
+  },
+  "instructions": {
+    "system_prompt": "You are Jordan, a helpful and technical Tier 1 Customer Support specialist for CloudServices. Your goal is to troubleshoot account connectivity issues, clarify billing questions, and assist users with service configuration. Always remain patient, clear, and focused on resolution. If the caller needs to update payment details, direct them to use the secure self-service portal at {portal_url}. Conclude the call pleasantly once their issue is resolved.",
+    "first_turn": {
+      "speaker": "agent",
+      "mode": "say",
+      "text": "Thank you for calling CloudServices Support. My name is Jordan. How may I assist you with your account today?"
+    },
+    "context_data": {
+      "portal_url": "https://portal.cloudservices.example.com"
+    },
+    "spoken_dialogue_rules": true
+  },
+  "voice": {
+    "provider": "gemini",
+    "voice_id": "Aoede",
+    "language": "en-US",
+    "speed": 1.0
+  },
+  "vad": {
+    "provider": "native",
+    "disabled": false,
+    "silence_duration_ms": 1400,
+    "prefix_padding_ms": 300,
+    "threshold": 0.5
+  },
+  "turn_detection": {
+    "mode": "server_vad",
+    "allow_interruptions": true,
+    "min_interruption_duration_ms": 400,
+    "min_interruption_words": 2,
+    "resume_false_interruption": true,
+    "min_endpointing_delay_ms": 500,
+    "user_away_timeout_seconds": 25.0
+  },
+  "session": {
+    "max_duration_seconds": 1800,
+    "inactivity_timeout_seconds": 180,
+    "participant_join_timeout_seconds": 45.0,
+    "delete_room_on_terminate": true,
+    "recording": {
+      "enabled": false,
+      "audio": true,
+      "traces": true
+    }
+  },
+  "tools": [
+    {
+      "name": "lookup_account",
+      "type": "webhook",
+      "description": "Look up customer account subscription status, active services, and open support tickets using customer email or ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer email address or account ID"
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "config": {
+        "url": "https://api.example.com/v1/support/accounts/lookup",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer {{env:SUPPORT_API_KEY}}",
+          "Content-Type": "application/json"
+        },
+        "timeout_seconds": 5.0
+      }
+    },
+    {
+      "name": "end_call",
+      "type": "builtin",
+      "description": "Gracefully terminates the phone call when support issue is resolved.",
+      "config": {
+        "delete_room": true,
+        "drain_timeout_seconds": 3.0,
+        "farewell_instruction": "Thank the caller for contacting CloudServices and wish them a wonderful day before disconnecting."
+      }
+    }
+  ],
+  "reporting": {
+    "enabled": true,
+    "endpoint": {
+      "url": "https://api.example.com/v1/telemetry/calls",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer {{env:TELEMETRY_KEY}}"
+      },
+      "timeout_seconds": 10.0
+    },
+    "retry_policy": {
+      "max_retries": 3,
+      "initial_delay_ms": 1000,
+      "backoff_factor": 2.0
+    },
+    "security": {
+      "validate_ssrf": true,
+      "allow_local": false
+    },
+    "payload_config": {
+      "include_chat_history": true,
+      "include_model_usage": true,
+      "include_events": true,
+      "custom_fields": {
+        "department": "tier1_support",
+        "tenant_id": "tenant-corp-001"
+      }
+    }
+  },
+  "metadata": {
+    "channel": "inbound_sip",
+    "queue": "cloud_support_priority"
+  }
+}
