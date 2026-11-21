@@ -64,10 +64,10 @@ services:
       - LIVEKIT_API_KEY=devkey
       - LIVEKIT_API_SECRET=secret_livekit_key_for_local_testing
       - HEALTH_CHECK_HOST=0.0.0.0
-      - HEALTH_CHECK_PORT=8081
+      - HEALTH_CHECK_PORT=${HEALTH_CHECK_PORT:-8081}
       - DRAIN_TIMEOUT_SECONDS=300
     ports:
-      - "127.0.0.1:8081:8081"
+      - "127.0.0.1:${HEALTH_CHECK_PORT:-8081}:${HEALTH_CHECK_PORT:-8081}"
     deploy:
       resources:
         limits:
@@ -82,7 +82,7 @@ services:
         max-size: "20m"
         max-file: "5"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8081/"]
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:${HEALTH_CHECK_PORT:-8081}/ || exit 1"]
       interval: 20s
       timeout: 5s
       retries: 3
