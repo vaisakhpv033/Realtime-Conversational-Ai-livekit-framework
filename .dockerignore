@@ -1,12 +1,49 @@
+# Git and version control
 .git
 .gitignore
+
+# Virtual environments
 .venv
-__pycache__
-*.pyc
-*.pyo
-*.pyd
+venv/
+env/
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+
+# Tests, benchmarks, and evaluation datasets
+tests/
+eval/
+
+# Logs and runtime artifacts
+logs/
+*.log
+
+# Environment secrets and credentials (preserve template)
 .env
 .env.*
 !.env.example
-tests
-.pytest_cache
+
+# Build, distribution, and packaging artifacts
+dist/
+build/
+*.egg-info/
+
+# IDE and AI agent configurations
+.vscode/
+.gemini/
+.cursor/
+.idea/
+
+# Temporary files and OS artifacts
+tmp/
+temp/
+*.tmp
+.DS_Store
+Thumbs.db

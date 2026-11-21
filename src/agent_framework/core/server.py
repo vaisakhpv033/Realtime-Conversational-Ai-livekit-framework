@@ -24,12 +24,15 @@ def create_server(
     port: Optional[int] = None,
     shutdown_process_timeout: Optional[float] = None,
     load_threshold: Optional[float] = None,
+    drain_timeout: Optional[float] = None,
+    prometheus_port: Optional[int] = None,
+    log_level: Optional[str] = None,
     **kwargs: Any,
 ) -> AgentServer:
     """Creates a configured LiveKit AgentServer instance.
 
     Configures health checks (port 8081 by default), shutdown process timeouts,
-    and worker load threshold.
+    worker load threshold, graceful call draining, and Prometheus metrics.
 
     Args:
         settings: Optional custom FrameworkSettings; defaults to global settings.
@@ -37,6 +40,9 @@ def create_server(
         port: Port override for health check server (defaults to 8081).
         shutdown_process_timeout: Timeout in seconds for graceful process shutdown.
         load_threshold: CPU/memory worker load threshold.
+        drain_timeout: Timeout in seconds for graceful active call draining before shutdown.
+        prometheus_port: Optional port for Prometheus metrics exporter.
+        log_level: Logging verbosity level for the LiveKit worker.
         **kwargs: Additional parameters forwarded to AgentServer.
 
     Returns:
@@ -56,19 +62,48 @@ def create_server(
         if load_threshold is not None
         else effective_settings.worker_load_threshold
     )
+    resolved_drain_timeout = (
+        drain_timeout
+        if drain_timeout is not None
+        else effective_settings.drain_timeout_seconds
+    )
+    resolved_prometheus_port = (
+        prometheus_port
+        if prometheus_port is not None
+        else effective_settings.prometheus_port
+    )
+    resolved_log_level = (
+        log_level
+        if log_level is not None
+        else effective_settings.livekit_log_level
+    )
 
     logger.info(
         f"Initializing AgentServer: host='{resolved_host}', port={resolved_port}, "
-        f"shutdown_timeout={resolved_shutdown_timeout}s, load_threshold={resolved_load_threshold}"
+        f"shutdown_timeout={resolved_shutdown_timeout}s, drain_timeout={resolved_drain_timeout}s, "
+        f"load_threshold={resolved_load_threshold}, log_level='{resolved_log_level}', "
+        f"prometheus_port={resolved_prometheus_port}"
     )
 
-    return AgentServer(
-        host=resolved_host,
-        port=resolved_port,
-        shutdown_process_timeout=resolved_shutdown_timeout,
-        load_threshold=resolved_load_threshold,
-        **kwargs,
-    )
+    server_kwargs: dict[str, Any] = {
+        "host": resolved_host,
+        "port": resolved_port,
+        "shutdown_process_timeout": resolved_shutdown_timeout,
+        "load_threshold": resolved_load_threshold,
+        "drain_timeout": int(resolved_drain_timeout),
+        "log_level": resolved_log_level,
+    }
+    if "ws_url" not in kwargs and effective_settings.livekit_url:
+        server_kwargs["ws_url"] = effective_settings.livekit_url
+    if "api_key" not in kwargs and effective_settings.livekit_api_key:
+        server_kwargs["api_key"] = effective_settings.livekit_api_key
+    if "api_secret" not in kwargs and effective_settings.livekit_api_secret:
+        server_kwargs["api_secret"] = effective_settings.livekit_api_secret
+    if resolved_prometheus_port is not None:
+        server_kwargs["prometheus_port"] = resolved_prometheus_port
+    server_kwargs.update(kwargs)
+
+    return AgentServer(**server_kwargs)
 
 
 def setup_server(
@@ -109,11 +144,23 @@ def run_app(server: Optional[AgentServer] = None, **kwargs: Any) -> None:
 
     Args:
         server: Optional AgentServer; creates and wires one if None.
-        **kwargs: Additional parameters forwarded to cli.run_app.
+        **kwargs: Additional parameters forwarded when initializing the server if server is None.
     """
-    srv = server if server is not None else setup_server()
+    if server is not None:
+        srv = server
+    else:
+        settings = kwargs.pop("settings", None)
+        coordinator = kwargs.pop("coordinator", None)
+        agent_name = kwargs.pop("agent_name", None)
+        created_srv = create_server(settings=settings, **kwargs)
+        srv = setup_server(
+            server=created_srv,
+            coordinator=coordinator,
+            settings=settings,
+            agent_name=agent_name,
+        )
     logger.info("Starting LiveKit Agent worker via CLI runner...")
-    cli.run_app(srv, **kwargs)
+    cli.run_app(srv)
 
 
 # Alias for run_app

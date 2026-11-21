@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-framework-config
+  namespace: livekit-agent-framework
+  labels:
+    app.kubernetes.io/name: livekit-agent-framework
+    app.kubernetes.io/component: worker
+data:
+  LIVEKIT_URL: "wss://livekit.example.com"
+  AGENT_NAME: "livekit-voice-agent"
+  LIVEKIT_LOG_LEVEL: "INFO"
+  HEALTH_CHECK_PORT: "8081"
+  WORKER_LOAD_THRESHOLD: "0.7"
+  DRAIN_TIMEOUT_SECONDS: "300"

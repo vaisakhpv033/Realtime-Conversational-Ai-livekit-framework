@@ -1,0 +1,21 @@
+[Unit]
+Description=LiveKit Voice Agent Framework Worker Service
+Documentation=https://github.com/livekit/agents
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=exec
+WorkingDirectory=/opt/agent-framework
+ExecStart=/usr/bin/docker compose up --remove-orphans
+ExecStop=/usr/bin/docker compose down --timeout 300
+TimeoutStopSec=330
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=agent-framework
+
+[Install]
+WantedBy=multi-user.target

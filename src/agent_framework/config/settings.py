@@ -87,8 +87,16 @@ class FrameworkSettings(BaseSettings):
     health_check_host: str = Field(default="0.0.0.0", alias="HEALTH_CHECK_HOST")
     health_check_port: int = Field(default=8081, alias="HEALTH_CHECK_PORT")
     shutdown_timeout_seconds: float = Field(default=60.0, alias="SHUTDOWN_TIMEOUT_SECONDS")
+    drain_timeout_seconds: float = Field(default=300.0, alias="DRAIN_TIMEOUT_SECONDS")
     worker_load_threshold: float = Field(default=0.7, alias="WORKER_LOAD_THRESHOLD")
+    prometheus_port: Optional[int] = Field(default=None, alias="PROMETHEUS_PORT")
+    livekit_log_level: str = Field(default="INFO", alias="LIVEKIT_LOG_LEVEL")
     allow_local_webhooks: bool = Field(default=False, alias="ALLOW_LOCAL_WEBHOOKS")
+
+    @property
+    def log_level(self) -> str:
+        """Alias for livekit_log_level."""
+        return self.livekit_log_level
 
     def resolve_bcp47_language(self, language_code: Optional[str]) -> str:
         """Resolves a raw language code or common language name into a verified BCP-47 tag."""

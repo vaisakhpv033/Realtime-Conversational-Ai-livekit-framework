@@ -880,8 +880,33 @@ def test_create_server_custom_port_and_shutdown_timeout():
         port=8089,
         shutdown_process_timeout=45.0,
         load_threshold=0.85,
+        drain_timeout=180.0,
+        prometheus_port=9090,
+        log_level="DEBUG",
     )
     assert isinstance(server, AgentServer)
+
+
+def test_framework_settings_production_defaults():
+    """Verifies default values for drain_timeout, prometheus_port, and log_level."""
+    cfg = FrameworkSettings()
+    assert cfg.drain_timeout_seconds == 300.0
+    assert cfg.prometheus_port is None
+    assert cfg.livekit_log_level == "INFO"
+    assert cfg.log_level == "INFO"
+
+
+def test_framework_settings_env_aliases(monkeypatch):
+    """Verifies environment variable aliases for production settings."""
+    monkeypatch.setenv("DRAIN_TIMEOUT_SECONDS", "450")
+    monkeypatch.setenv("PROMETHEUS_PORT", "9100")
+    monkeypatch.setenv("LIVEKIT_LOG_LEVEL", "WARNING")
+
+    cfg = FrameworkSettings()
+    assert cfg.drain_timeout_seconds == 450.0
+    assert cfg.prometheus_port == 9100
+    assert cfg.livekit_log_level == "WARNING"
+    assert cfg.log_level == "WARNING"
 
 
 def test_setup_server_wires_entrypoint_and_session_end():
@@ -913,6 +938,30 @@ def test_run_app_invokes_cli():
     with patch("agent_framework.core.server.cli.run_app") as mock_cli_run:
         run_server(mock_server)
         mock_cli_run.assert_called_once_with(mock_server)
+
+
+def test_create_server_forwards_credentials_from_settings():
+    """Verifies create_server forwards credentials from custom FrameworkSettings."""
+    custom_cfg = FrameworkSettings(
+        livekit_url="wss://custom.livekit.cloud",
+        livekit_api_key="custom_api_key",
+        livekit_api_secret="custom_secret_key",
+    )
+    server = create_server(settings=custom_cfg)
+    assert server._ws_url == "wss://custom.livekit.cloud"
+    assert server._api_key == "custom_api_key"
+    assert server._api_secret == "custom_secret_key"
+
+
+def test_run_app_with_custom_kwargs():
+    """Verifies run_app gracefully handles custom kwargs when initializing server."""
+    with patch("agent_framework.core.server.cli.run_app") as mock_cli_run:
+        run_app(port=8099, drain_timeout=240.0)
+        mock_cli_run.assert_called_once()
+        passed_server = mock_cli_run.call_args[0][0]
+        assert isinstance(passed_server, AgentServer)
+        assert passed_server._port == 8099
+        assert passed_server._drain_timeout == 240
 
 
 # ==============================================================================

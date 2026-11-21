@@ -1,0 +1,89 @@
+# LiveKit Voice Agent Framework - Complete Self-Hosted Stack
+# Includes:
+#   1. Redis 7 (Room routing & distributed agent dispatch state)
+#   2. LiveKit Server SFU (WebRTC media routing & job dispatch)
+#   3. Agent Framework Worker (Voice AI processing container)
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: livekit-redis
+    restart: unless-stopped
+    command: redis-server --save "" --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  livekit-server:
+    image: livekit/livekit-server:latest
+    container_name: livekit-server
+    restart: unless-stopped
+    command: ["--config", "/etc/livekit.yaml"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./deploy/livekit.yaml:/etc/livekit.yaml:ro
+    ports:
+      # Primary HTTP / WebSocket API & room signal
+      - "7880:7880"
+      # WebRTC TCP fallback media port
+      - "7881:7881"
+      # WebRTC TURN UDP port
+      - "7882:7882/udp"
+      # WebRTC ICE UDP media port range
+      - "50000-50020:50000-50020/udp"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  agent-framework-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agent-framework-worker
+    restart: unless-stopped
+    stop_grace_period: 300s
+    depends_on:
+      - livekit-server
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LIVEKIT_URL=ws://livekit-server:7880
+      - LIVEKIT_API_KEY=devkey
+      - LIVEKIT_API_SECRET=secret_livekit_key_for_local_testing
+      - HEALTH_CHECK_HOST=0.0.0.0
+      - HEALTH_CHECK_PORT=8081
+      - DRAIN_TIMEOUT_SECONDS=300
+    ports:
+      - "127.0.0.1:8081:8081"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4096M
+        reservations:
+          cpus: "1.0"
+          memory: 2048M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8081/"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

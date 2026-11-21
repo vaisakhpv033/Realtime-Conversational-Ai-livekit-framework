@@ -1,0 +1,14 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: agent-framework-pdb
+  namespace: livekit-agent-framework
+  labels:
+    app.kubernetes.io/name: livekit-agent-framework
+    app.kubernetes.io/component: worker
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: livekit-agent-framework
+      app.kubernetes.io/component: worker

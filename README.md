@@ -56,9 +56,26 @@ Designed to run low-latency, bidirectional, multi-tenant voice agents where **10
 Autocoach-agent/
 ├── pyproject.toml              # Dependencies, uv build, and CLI entrypoint
 ├── uv.lock                     # Deterministic dependency lockfile
-├── Dockerfile                  # Multi-stage production container build
-├── docker-compose.yml          # Self-hosted stack with port 8081 health checks
+├── Dockerfile                  # Hardened multi-stage production container build
+├── docker-compose.yml          # Production worker stack with 300s call draining
+├── docker-compose.self-hosted.yml # Full self-hosted stack (LiveKit + Redis + Worker)
+├── .dockerignore               # Production image build exclusions
 ├── .env.example                # Environment configuration template
+├── deploy/                     # Enterprise deployment assets and scripts
+│   ├── README.md               # Production operations guide and runbooks
+│   ├── deploy.sh               # Automated build, rollout, and health check script
+│   ├── verify_stack.py         # Diagnostic pre-flight and post-deployment validator
+│   ├── livekit.yaml            # Self-hosted LiveKit SFU configuration
+│   ├── systemd/                # Linux systemd service definitions
+│   │   └── agent-framework.service
+│   └── k8s/                    # Enterprise Kubernetes manifests
+│       ├── namespace.yaml      # Dedicated namespace
+│       ├── configmap.yaml      # Non-sensitive runtime configuration
+│       ├── secret.yaml         # Sensitive credential templates
+│       ├── service.yaml        # ClusterIP service for port 8081
+│       ├── deployment.yaml     # RollingUpdate worker with 300s grace period
+│       ├── hpa.yaml            # HorizontalPodAutoscaler (2-10 replicas)
+│       └── pdb.yaml            # PodDisruptionBudget (minAvailable: 1)
 ├── examples/                   # Clean, domain-neutral application blueprints
 │   ├── customer_support/       # Tier 1 Support Agent with REST account lookup
 │   ├── appointment_booking/    # Universal Booking Agent with calendar tools
@@ -77,7 +94,7 @@ Autocoach-agent/
 │   │   └── utils/              # Secret resolution and template interpolation
 │   └── autocoach/              # Backward-compatibility re-export bridge
 └── tests/
-    └── unit/                   # 210+ comprehensive unit test suite
+    └── unit/                   # 230+ comprehensive unit test suite
 ```
 
 ---
@@ -152,6 +169,50 @@ uv run python scripts/estimate_sts_cost.py --blueprint appointment_booking --dur
 # Estimate arbitrary prompt file
 uv run python scripts/estimate_sts_cost.py --prompt-file path/to/prompt.txt --duration 10
 ```
+
+---
+
+## Production Deployment
+
+The framework includes enterprise-grade deployment configurations supporting multiple topologies:
+
+### 1. Docker Compose (Worker-Only)
+Run the agent worker against LiveKit Cloud or an existing remote SFU cluster with 300s call draining:
+```bash
+docker compose up -d --build
+```
+
+### 2. Full-Stack Self-Hosted (SFU + Redis + Worker)
+Spin up a complete local or private cloud environment including LiveKit SFU, Redis 7, and the Agent Worker:
+```bash
+docker compose -f docker-compose.self-hosted.yml up -d --build
+```
+
+### 3. Enterprise Kubernetes (`deploy/k8s/`)
+Deploy to Kubernetes with rolling updates (`maxSurge: 1`, `maxUnavailable: 0`), graceful call draining (`terminationGracePeriodSeconds: 300`), Horizontal Pod Autoscaling (HPA), and Pod Disruption Budgets (PDB):
+```bash
+kubectl apply -f deploy/k8s/namespace.yaml
+kubectl apply -f deploy/k8s/secret.yaml
+kubectl apply -f deploy/k8s/configmap.yaml
+kubectl apply -f deploy/k8s/service.yaml
+kubectl apply -f deploy/k8s/deployment.yaml
+kubectl apply -f deploy/k8s/pdb.yaml
+kubectl apply -f deploy/k8s/hpa.yaml
+```
+
+### 4. Linux VM Host Systemd Service (`deploy/systemd/`)
+Run as a native systemd unit with automated startup and a 330s stop timeout to accommodate Docker call draining:
+```bash
+sudo cp deploy/systemd/agent-framework.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now agent-framework.service
+```
+
+### 5. Automated Rollout & Diagnostic Scripts
+- **Zero-Downtime Rollout**: `./deploy/deploy.sh` performs pre-flight checks, image builds, container recreation, and health verification loop.
+- **Stack Diagnostic Tool**: `uv run python deploy/verify_stack.py` verifies required environment variables, SFU reachability, Gemini credentials, and port 8081 health status.
+
+For in-depth operational runbooks and troubleshooting, see the [Production Operations Guide](deploy/README.md).
 
 ---
 
