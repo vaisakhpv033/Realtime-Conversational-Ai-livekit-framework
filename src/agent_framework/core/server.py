@@ -106,6 +106,35 @@ def create_server(
     return AgentServer(**server_kwargs)
 
 
+_active_coordinator: Optional[SessionCoordinator] = None
+
+
+def get_active_coordinator() -> SessionCoordinator:
+    """Returns the active SessionCoordinator instance, creating one if not yet initialized."""
+    global _active_coordinator
+    if _active_coordinator is None:
+        _active_coordinator = SessionCoordinator()
+    return _active_coordinator
+
+
+def set_active_coordinator(coordinator: SessionCoordinator) -> None:
+    """Explicitly sets the active SessionCoordinator instance."""
+    global _active_coordinator
+    _active_coordinator = coordinator
+
+
+async def entrypoint(ctx: JobContext) -> None:
+    """Top-level picklable RTC session entrypoint for LiveKit Agent worker processes."""
+    coord = get_active_coordinator()
+    await coord.run(ctx)
+
+
+def on_session_end(session_id: str) -> None:
+    """Top-level picklable session-end callback for LiveKit Agent worker processes."""
+    coord = get_active_coordinator()
+    coord.on_session_end(session_id)
+
+
 def setup_server(
     server: Optional[AgentServer] = None,
     coordinator: Optional[SessionCoordinator] = None,
@@ -125,15 +154,14 @@ def setup_server(
     """
     effective_settings = settings or default_settings
     srv = server if server is not None else create_server(effective_settings)
-    coord = coordinator if coordinator is not None else SessionCoordinator()
+    if coordinator is not None:
+        set_active_coordinator(coordinator)
     effective_name = agent_name or effective_settings.agent_name
 
-    @srv.rtc_session(
+    srv.rtc_session(
         agent_name=effective_name,
-        on_session_end=coord.on_session_end,
-    )
-    async def entrypoint(ctx: JobContext) -> None:
-        await coord.run(ctx)
+        on_session_end=on_session_end,
+    )(entrypoint)
 
     logger.info(f"Registered RTC session entrypoint for agent '{effective_name}'")
     return srv

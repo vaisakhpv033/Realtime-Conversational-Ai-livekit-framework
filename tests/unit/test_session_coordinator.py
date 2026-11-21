@@ -59,6 +59,8 @@ from agent_framework.core.context import (
 )
 from agent_framework.core.server import (
     create_server,
+    entrypoint,
+    on_session_end,
     run_app,
     run_server,
     setup_server,
@@ -923,8 +925,18 @@ def test_setup_server_wires_entrypoint_and_session_end():
     assert configured_server is mock_server
     mock_server.rtc_session.assert_called_once_with(
         agent_name="test-voice-agent",
-        on_session_end=coordinator.on_session_end,
+        on_session_end=on_session_end,
     )
+
+
+def test_setup_server_is_picklable_for_multiprocessing():
+    """Verifies setup_server creates an AgentServer that is picklable for multiprocessing spawn/forkserver."""
+    import pickle
+    server = setup_server()
+    dumped = pickle.dumps(server)
+    assert len(dumped) > 0
+    loaded = pickle.loads(dumped)
+    assert isinstance(loaded, AgentServer)
 
 
 def test_run_app_invokes_cli():
