@@ -38,23 +38,38 @@ uv run agent-framework dev
 ## 3. Dispatching Sessions via LiveKit CLI
 
 ### Using LiveKit CLI (`lk`)
-You can dispatch a voice agent into a room with dynamic metadata using the LiveKit CLI tool:
+You can dispatch a voice agent with dynamic metadata using the LiveKit CLI tool:
+
+#### Option A: Explicit Agent Dispatch (`lk dispatch create`)
+Dispatches an agent worker directly into an active room with job metadata:
 
 ```bash
 # Dispatch Tier 1 Support Agent
-lk room create \
-  --name "support-call-101" \
+lk dispatch create \
+  --room "support-call-101" \
+  --agent-name "voice-agent" \
   --metadata "$(cat examples/customer_support/support_metadata.json)"
 
 # Dispatch Appointment Booking Agent
-lk room create \
-  --name "booking-call-202" \
+lk dispatch create \
+  --room "booking-call-202" \
+  --agent-name "voice-agent" \
   --metadata "$(cat examples/appointment_booking/booking_metadata.json)"
 
 # Dispatch Virtual Receptionist Agent
-lk room create \
-  --name "receptionist-call-303" \
+lk dispatch create \
+  --room "receptionist-call-303" \
+  --agent-name "voice-agent" \
   --metadata "$(cat examples/virtual_receptionist/receptionist_metadata.json)"
+```
+
+#### Option B: Room Creation with Metadata (`lk room create` & `lk room update`)
+```bash
+# 1. Create the room
+lk room create support-call-101 --empty-timeout 300
+
+# 2. Attach metadata to the room
+lk room update support-call-101 --metadata "$(cat examples/customer_support/support_metadata.json)"
 ```
 
 When a user joins `support-call-101`, the worker automatically parses the room metadata, validates the schema, initializes the Gemini Live model session with the specified prompt and tools, and speaks the initial greeting.
