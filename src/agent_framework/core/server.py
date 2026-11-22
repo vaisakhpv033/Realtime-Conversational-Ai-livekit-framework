@@ -129,10 +129,10 @@ async def entrypoint(ctx: JobContext) -> None:
     await coord.run(ctx)
 
 
-def on_session_end(session_id: str) -> None:
+async def on_session_end(session_id: str) -> None:
     """Top-level picklable session-end callback for LiveKit Agent worker processes."""
     coord = get_active_coordinator()
-    coord.on_session_end(session_id)
+    await coord.on_session_end(session_id)
 
 
 def setup_server(

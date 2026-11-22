@@ -143,6 +143,98 @@ KNOWN_TOP_LEVEL_SECTIONS = {
 }
 
 
+def normalize_metadata_for_contract(data: dict[str, Any]) -> dict[str, Any]:
+    """Ensures input metadata conforms to the strict SessionConfig contract.
+
+    1. If an explicit nested 'session_config' dictionary (or JSON string) is present,
+       merges it with outer configuration while preserving unmapped parameters in 'metadata'.
+    2. Converts flat legacy parameters (instructions string, custom_instructions,
+       voice string, language, model, temperature, thinking_level, first_turn_greeting,
+       vad_sensitivity_ms) into strict section structures.
+    3. Supplies robust defaults for required sections (models, instructions, voice)
+       if not explicitly declared.
+    4. Routes any unmapped top-level keys outside KNOWN_TOP_LEVEL_SECTIONS into
+       the 'metadata' section so strict schema validation succeeds without losing data.
+    """
+    if not isinstance(data, dict):
+        return data
+
+    res = copy.deepcopy(data)
+
+    # 1. If explicit 'session_config' is present as string, parse it
+    if "session_config" in res and isinstance(res["session_config"], str):
+        trimmed = res["session_config"].strip()
+        if trimmed:
+            try:
+                parsed_cfg = json.loads(trimmed)
+                if isinstance(parsed_cfg, dict):
+                    res["session_config"] = parsed_cfg
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+    nested = res.pop("session_config", {}) if isinstance(res.get("session_config"), dict) else {}
+
+    # 2. Normalize flat legacy prompt/instructions if provided as string
+    if "instructions" in res and isinstance(res["instructions"], str):
+        res["instructions"] = {"system_prompt": res.pop("instructions")}
+    elif "custom_instructions" in res and isinstance(res["custom_instructions"], str):
+        res["instructions"] = {"system_prompt": res.pop("custom_instructions")}
+
+    # 3. Normalize flat legacy voice if provided as string
+    if "voice" in res and isinstance(res["voice"], str):
+        v = {"provider": "gemini", "voice_id": res.pop("voice")}
+        if "language" in res and isinstance(res["language"], str):
+            v["language"] = res.pop("language")
+        res["voice"] = v
+
+    # 4. Normalize flat legacy model and temperature
+    if "model" in res and isinstance(res["model"], str):
+        models_sec = res.setdefault("models", {"provider": "gemini"})
+        models_sec["model"] = res.pop("model")
+    if "temperature" in res and isinstance(res["temperature"], (int, float)):
+        models_sec = res.setdefault("models", {"provider": "gemini", "model": "gemini-3.8-live"})
+        models_sec["temperature"] = float(res.pop("temperature"))
+    if "thinking_level" in res:
+        tl = str(res.pop("thinking_level")).lower()
+        models_sec = res.setdefault("models", {"provider": "gemini", "model": "gemini-3.8-live"})
+        if tl in ("high", "medium", "low"):
+            models_sec["thinking"] = {"enabled": True, "reasoning_effort": tl}
+
+    # 5. Normalize flat first_turn_greeting
+    if "first_turn_greeting" in res:
+        greeting_text = res.pop("first_turn_greeting")
+        if greeting_text and isinstance(greeting_text, str) and greeting_text.strip():
+            inst_sec = res.setdefault("instructions", {"system_prompt": "You are a voice assistant."})
+            inst_sec["first_turn"] = {
+                "speaker": "agent",
+                "mode": "say",
+                "text": greeting_text.strip(),
+            }
+
+    # 6. Normalize flat VAD sensitivity (ms)
+    if "vad_sensitivity_ms" in res and isinstance(res["vad_sensitivity_ms"], (int, float)):
+        vad_val = int(res.pop("vad_sensitivity_ms"))
+        vad_sec = res.setdefault("vad", {"provider": "native"})
+        vad_sec["silence_duration_ms"] = vad_val
+
+    # 7. Deep merge nested session_config over flat outer configuration
+    merged = deep_merge(res, nested)
+
+    # 8. Route any remaining unmapped top-level keys into merged["metadata"]
+    unmapped_keys = [k for k in merged.keys() if k not in KNOWN_TOP_LEVEL_SECTIONS]
+    if unmapped_keys:
+        meta = merged.setdefault("metadata", {})
+        if not isinstance(meta, dict):
+            meta = {}
+            merged["metadata"] = meta
+        for k in unmapped_keys:
+            val = merged.pop(k)
+            if k not in meta:
+                meta[k] = val
+
+    return merged
+
+
 def extract_participant_metadata(
     participant: Any,
 ) -> dict[str, Any]:
@@ -292,9 +384,12 @@ def extract_session_metadata(
         session_section = merged_data.setdefault("session", {})
         session_section["target_participant_identity"] = matched_participant_identity
 
+    # Normalize before validation to route unmapped LiveKit room/job properties into metadata
+    normalized = normalize_metadata_for_contract(merged_data)
+
     # Strictly validate merged payload
     return validate_metadata(
-        merged_data,
+        normalized,
         resolve_env_secrets=resolve_env_secrets,
         env=env,
     )

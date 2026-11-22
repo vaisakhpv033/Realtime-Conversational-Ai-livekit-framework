@@ -908,3 +908,164 @@ class TestHardenedValidationAndEdgeCases:
         assert res["tools"][0]["name"] == "end_call"
         assert res["metadata"]["custom_vocabulary"] == ["orthodontics", "cavity"]
         assert res["metadata"]["trainee_score"] == 95
+
+    def test_normalize_metadata_for_contract_with_nested_session_config(self):
+        from agent_framework.config.resolver import normalize_metadata_for_contract
+
+        raw_payload = {
+            "scenario": "doctor-detailing",
+            "patient_name": "Dr. Arthur Hayes",
+            "trainee_id": "REP-101",
+            "trainee_name": "Medical Representative",
+            "session_config": {
+                "version": "1.0",
+                "agent": {"name": "ira-voice-agent", "role": "doctor"},
+                "models": {"provider": "gemini", "model": "gemini-3.8-live"},
+                "instructions": {"system_prompt": "You are Dr. Hayes, an interventional cardiologist."},
+                "voice": {"voice_id": "Charon"},
+            },
+        }
+
+        normalized = normalize_metadata_for_contract(raw_payload)
+        # Verify nested session_config is elevated
+        assert normalized["agent"]["name"] == "ira-voice-agent"
+        assert normalized["agent"]["role"] == "doctor"
+        assert normalized["models"]["model"] == "gemini-3.8-live"
+        assert normalized["voice"]["voice_id"] == "Charon"
+        # Verify outer unmapped fields are routed into metadata
+        assert normalized["metadata"]["scenario"] == "doctor-detailing"
+        assert normalized["metadata"]["patient_name"] == "Dr. Arthur Hayes"
+        assert normalized["metadata"]["trainee_id"] == "REP-101"
+        assert normalized["metadata"]["trainee_name"] == "Medical Representative"
+
+        # Verify it passes strict validate_metadata without extra-fields error
+        config = validate_metadata(normalized)
+        assert config.agent.name == "ira-voice-agent"
+        assert config.metadata["scenario"] == "doctor-detailing"
+        assert config.metadata["patient_name"] == "Dr. Arthur Hayes"
+
+    def test_extract_session_metadata_normalizes_legacy_fields_in_job_metadata(self):
+        mock_job = MagicMock()
+        mock_job.metadata = json.dumps({
+            "scenario": "doctor-detailing",
+            "persona": "doctor",
+            "patient_name": "Dr. Elena Rostova",
+            "trainee_id": "REP-202",
+            "models": {"provider": "gemini", "model": "gemini-3.8-live"},
+            "instructions": {"system_prompt": "You are Dr. Elena Rostova, an endocrinologist."},
+            "voice": {"voice_id": "Aoede"},
+        })
+        mock_room = MagicMock()
+        mock_room.metadata = None
+        mock_room.remote_participants = {}
+
+        mock_ctx = MagicMock(spec=JobContext)
+        mock_ctx.job = mock_job
+        mock_ctx.room = mock_room
+
+        config = extract_session_metadata(mock_ctx)
+        assert config.models.model == "gemini-3.8-live"
+        assert config.instructions.system_prompt == "You are Dr. Elena Rostova, an endocrinologist."
+        assert config.voice.voice_id == "Aoede"
+        assert config.metadata["scenario"] == "doctor-detailing"
+        assert config.metadata["patient_name"] == "Dr. Elena Rostova"
+
+    def test_normalize_metadata_for_contract_with_serialized_json_session_config(self):
+        from agent_framework.config.resolver import normalize_metadata_for_contract
+
+        raw_payload = {
+            "scenario": "doctor-detailing",
+            "session_config": json.dumps({
+                "version": "1.0",
+                "models": {"provider": "gemini", "model": "gemini-3.8-live"},
+                "instructions": {"system_prompt": "You are Dr. Hayes."},
+                "voice": {"voice_id": "Charon"},
+            }),
+        }
+        normalized = normalize_metadata_for_contract(raw_payload)
+        assert normalized["models"]["model"] == "gemini-3.8-live"
+        assert normalized["instructions"]["system_prompt"] == "You are Dr. Hayes."
+        assert normalized["voice"]["voice_id"] == "Charon"
+        assert normalized["metadata"]["scenario"] == "doctor-detailing"
+
+        config = validate_metadata(normalized)
+        assert config.models.model == "gemini-3.8-live"
+
+    def test_normalize_metadata_for_contract_flat_legacy_parameters(self):
+        from agent_framework.config.resolver import normalize_metadata_for_contract
+
+        raw_payload = {
+            "instructions": "You are Dr. Arthur Hayes, an interventional cardiologist.",
+            "voice": "Charon",
+            "model": "gemini-3.8-live",
+            "temperature": 0.4,
+            "first_turn_greeting": "Come in, please have a seat.",
+            "vad_sensitivity_ms": 1500,
+            "scenario": "doctor-detailing",
+            "doctor_specialty": "Cardiology",
+        }
+        normalized = normalize_metadata_for_contract(raw_payload)
+        assert normalized["instructions"]["system_prompt"] == "You are Dr. Arthur Hayes, an interventional cardiologist."
+        assert normalized["instructions"]["first_turn"]["mode"] == "say"
+        assert normalized["instructions"]["first_turn"]["text"] == "Come in, please have a seat."
+        assert normalized["voice"]["voice_id"] == "Charon"
+        assert normalized["models"]["model"] == "gemini-3.8-live"
+        assert normalized["models"]["temperature"] == 0.4
+        assert normalized["vad"]["silence_duration_ms"] == 1500
+        assert normalized["metadata"]["scenario"] == "doctor-detailing"
+        assert normalized["metadata"]["doctor_specialty"] == "Cardiology"
+
+        config = validate_metadata(normalized)
+        assert config.instructions.system_prompt == "You are Dr. Arthur Hayes, an interventional cardiologist."
+        assert config.instructions.first_turn.text == "Come in, please have a seat."
+        assert config.voice.voice_id == "Charon"
+
+    def test_normalize_metadata_for_contract_full_doctor_detailing_log_payload(self):
+        """Verifies exact real-world payload from frontend detailing scenario passes cleanly."""
+        from agent_framework.config.resolver import normalize_metadata_for_contract
+
+        raw_payload = {
+            "scenario": "doctor-detailing",
+            "persona": "doctor",
+            "persona_name": "Dr. Arthur Hayes",
+            "language": "en-US",
+            "difficulty": "medium",
+            "name": "Dr. Arthur Hayes",
+            "patient_name": "Dr. Arthur Hayes",
+            "customer_name": "Dr. Arthur Hayes",
+            "trainee_id": "FDT-101",
+            "trainee_name": "Front Desk Trainee",
+            "gender": "male",
+            "custom_instructions": "**Doctor Persona & Practice Profile**\nYou are Dr. Arthur Hayes, an interventional cardiologist.",
+            "type": "Dr. Arthur Hayes — Interventional Cardiology",
+            "optional_data": {"instructions": "**Doctor Persona**"},
+            "agent_name": "ira-voice-agent",
+            "planted_objection": "none",
+            "scenario_id": "doctor-cardiology-default",
+            "title": "Dr. Arthur Hayes — Interventional Cardiology",
+            "model": "gemini-3.8-live",
+            "temperature": 0.4,
+            "thinking_level": "high",
+            "vad_sensitivity_ms": 1500,
+            "session_config": {
+                "version": "1.0",
+                "agent": {"name": "ira-voice-agent", "role": "doctor"},
+                "trainee_id": "FDT-101",
+            },
+            "instructions": "**Doctor Persona & Practice Profile**\nYou are Dr. Arthur Hayes.",
+            "voice": "Charon",
+        }
+
+        normalized = normalize_metadata_for_contract(raw_payload)
+        config = validate_metadata(normalized)
+
+        assert config.models.model == "gemini-3.8-live"
+        assert config.models.temperature == 0.4
+        assert config.models.thinking.enabled is True
+        assert config.models.thinking.reasoning_effort == "high"
+        assert config.voice.voice_id == "Charon"
+        assert config.voice.language == "en-US"
+        assert "Dr. Arthur Hayes" in config.instructions.system_prompt
+        assert config.metadata["scenario"] == "doctor-detailing"
+        assert config.metadata["persona"] == "doctor"
+        assert config.metadata["trainee_id"] == "FDT-101"
