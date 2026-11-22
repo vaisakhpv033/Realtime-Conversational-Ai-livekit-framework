@@ -396,7 +396,7 @@ async def test_session_coordinator_full_initialization():
 
 @pytest.mark.asyncio
 async def test_first_turn_say():
-    """Verifies that mode='say' with text invokes session.say(text)."""
+    """Verifies that mode='say' with text invokes session.say(text) when model supports say."""
     config = make_valid_session_config(
         instructions={
             "system_prompt": "Assistant prompt",
@@ -418,9 +418,13 @@ async def test_first_turn_say():
     mock_agent_session.start = AsyncMock()
     mock_agent_session.say = AsyncMock()
     mock_agent_session.generate_reply = AsyncMock()
+    mock_agent_session.tts = None
+
+    mock_model = MagicMock()
+    mock_model.capabilities.supports_say = True
 
     with (
-        patch("agent_framework.core.session.ModelFactory.create_model"),
+        patch("agent_framework.core.session.ModelFactory.create_model", return_value=mock_model),
         patch("agent_framework.core.session.TurnDetectionFactory.build_turn_handling_options"),
         patch("agent_framework.core.session.ToolRegistry.build_tools_from_config", return_value=[]),
         patch("agent_framework.core.session.AgentSession", return_value=mock_agent_session),
@@ -431,6 +435,54 @@ async def test_first_turn_say():
 
         mock_agent_session.say.assert_awaited_once_with("Hello, how may I assist you today?")
         mock_agent_session.generate_reply.assert_not_called()
+
+        sc = get_session_context(ctx)
+        sc.cancel_watchdogs()
+
+
+@pytest.mark.asyncio
+async def test_first_turn_say_fallback_to_generate_reply():
+    """Verifies that mode='say' seamlessly falls back to generate_reply when model lacks say support."""
+    config = make_valid_session_config(
+        instructions={
+            "system_prompt": "Assistant prompt",
+            "first_turn": {
+                "speaker": "agent",
+                "mode": "say",
+                "text": "Hello, how may I assist you today?",
+            },
+        }
+    )
+    meta_json = json.dumps(config.model_dump())
+    ctx = make_mock_job_context(
+        job_id="job_say_fallback",
+        metadata_json=meta_json,
+        remote_participants={"p1": make_mock_participant(identity="caller")},
+    )
+
+    mock_agent_session = MagicMock(spec=AgentSession)
+    mock_agent_session.start = AsyncMock()
+    mock_agent_session.say = AsyncMock()
+    mock_agent_session.generate_reply = AsyncMock()
+    mock_agent_session.tts = None
+
+    mock_model = MagicMock()
+    mock_model.capabilities.supports_say = False
+
+    with (
+        patch("agent_framework.core.session.ModelFactory.create_model", return_value=mock_model),
+        patch("agent_framework.core.session.TurnDetectionFactory.build_turn_handling_options"),
+        patch("agent_framework.core.session.ToolRegistry.build_tools_from_config", return_value=[]),
+        patch("agent_framework.core.session.AgentSession", return_value=mock_agent_session),
+        patch("agent_framework.core.session.Agent"),
+    ):
+        coordinator = SessionCoordinator()
+        await coordinator.run(ctx)
+
+        mock_agent_session.say.assert_not_called()
+        mock_agent_session.generate_reply.assert_awaited_once_with(
+            instructions="Please greet the user by saying: 'Hello, how may I assist you today?'"
+        )
 
         sc = get_session_context(ctx)
         sc.cancel_watchdogs()

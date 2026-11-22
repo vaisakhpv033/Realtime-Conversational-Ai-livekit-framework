@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
+import inspect
 import logging
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -222,20 +223,42 @@ class SessionCoordinator:
             session_context.mark_started()
             logger.info(f"AgentSession successfully started for job '{job_id}'")
 
-            # 11. Execute first-turn greeting
+            # 11. Set up session watchdogs
+            self._setup_watchdogs(ctx, session_context)
+
+            # 12. Execute first-turn greeting
             first_turn = session_config.instructions.first_turn
             if first_turn.speaker == "agent":
                 if first_turn.mode == "say" and first_turn.text:
-                    logger.info(f"Executing agent first-turn say: '{first_turn.text[:40]}...'")
-                    await session.say(first_turn.text)
+                    activity = getattr(session, "_activity", None)
+                    tts_available = bool(
+                        getattr(session, "tts", None)
+                        or (activity and getattr(activity, "tts", None))
+                    )
+                    active_llm = llm or getattr(session, "llm", None)
+                    supports_say = bool(
+                        getattr(getattr(active_llm, "capabilities", None), "supports_say", False)
+                    )
+
+                    if tts_available or supports_say:
+                        logger.info(f"Executing agent first-turn say: '{first_turn.text[:40]}...'")
+                        await session.say(first_turn.text)
+                    else:
+                        logger.info(
+                            f"Model does not support direct say(); routing first-turn greeting via generate_reply: '{first_turn.text[:40]}...'"
+                        )
+                        reply_handle = session.generate_reply(
+                            instructions=f"Please greet the user by saying: '{first_turn.text}'"
+                        )
+                        if inspect.isawaitable(reply_handle):
+                            await reply_handle
                 elif first_turn.mode == "generate_reply":
                     logger.info("Executing agent first-turn generate_reply...")
-                    await session.generate_reply()
+                    reply_handle = session.generate_reply()
+                    if inspect.isawaitable(reply_handle):
+                        await reply_handle
             else:
                 logger.debug("First turn speaker is 'user'; agent listening passively.")
-
-            # 12. Set up session watchdogs
-            self._setup_watchdogs(ctx, session_context)
 
         except Exception as e:
             logger.error(f"Error in SessionCoordinator for job '{job_id}': {e}", exc_info=True)

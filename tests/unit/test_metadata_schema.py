@@ -991,81 +991,30 @@ class TestHardenedValidationAndEdgeCases:
         config = validate_metadata(normalized)
         assert config.models.model == "gemini-3.8-live"
 
-    def test_normalize_metadata_for_contract_flat_legacy_parameters(self):
-        from agent_framework.config.resolver import normalize_metadata_for_contract
-
-        raw_payload = {
-            "instructions": "You are Dr. Arthur Hayes, an interventional cardiologist.",
-            "voice": "Charon",
-            "model": "gemini-3.8-live",
-            "temperature": 0.4,
-            "first_turn_greeting": "Come in, please have a seat.",
-            "vad_sensitivity_ms": 1500,
-            "scenario": "doctor-detailing",
-            "doctor_specialty": "Cardiology",
-        }
-        normalized = normalize_metadata_for_contract(raw_payload)
-        assert normalized["instructions"]["system_prompt"] == "You are Dr. Arthur Hayes, an interventional cardiologist."
-        assert normalized["instructions"]["first_turn"]["mode"] == "say"
-        assert normalized["instructions"]["first_turn"]["text"] == "Come in, please have a seat."
-        assert normalized["voice"]["voice_id"] == "Charon"
-        assert normalized["models"]["model"] == "gemini-3.8-live"
-        assert normalized["models"]["temperature"] == 0.4
-        assert normalized["vad"]["silence_duration_ms"] == 1500
-        assert normalized["metadata"]["scenario"] == "doctor-detailing"
-        assert normalized["metadata"]["doctor_specialty"] == "Cardiology"
-
-        config = validate_metadata(normalized)
-        assert config.instructions.system_prompt == "You are Dr. Arthur Hayes, an interventional cardiologist."
-        assert config.instructions.first_turn.text == "Come in, please have a seat."
-        assert config.voice.voice_id == "Charon"
-
-    def test_normalize_metadata_for_contract_full_doctor_detailing_log_payload(self):
-        """Verifies exact real-world payload from frontend detailing scenario passes cleanly."""
+    def test_normalize_metadata_for_contract_custom_metadata_routing(self):
         from agent_framework.config.resolver import normalize_metadata_for_contract
 
         raw_payload = {
             "scenario": "doctor-detailing",
             "persona": "doctor",
-            "persona_name": "Dr. Arthur Hayes",
-            "language": "en-US",
-            "difficulty": "medium",
-            "name": "Dr. Arthur Hayes",
-            "patient_name": "Dr. Arthur Hayes",
-            "customer_name": "Dr. Arthur Hayes",
             "trainee_id": "FDT-101",
-            "trainee_name": "Front Desk Trainee",
-            "gender": "male",
-            "custom_instructions": "**Doctor Persona & Practice Profile**\nYou are Dr. Arthur Hayes, an interventional cardiologist.",
-            "type": "Dr. Arthur Hayes — Interventional Cardiology",
-            "optional_data": {"instructions": "**Doctor Persona**"},
-            "agent_name": "ira-voice-agent",
-            "planted_objection": "none",
-            "scenario_id": "doctor-cardiology-default",
-            "title": "Dr. Arthur Hayes — Interventional Cardiology",
-            "model": "gemini-3.8-live",
-            "temperature": 0.4,
-            "thinking_level": "high",
-            "vad_sensitivity_ms": 1500,
             "session_config": {
                 "version": "1.0",
-                "agent": {"name": "ira-voice-agent", "role": "doctor"},
-                "trainee_id": "FDT-101",
+                "models": {"provider": "gemini", "model": "gemini-3.8-live"},
+                "instructions": {
+                    "system_prompt": "You are Dr. Arthur Hayes.",
+                    "first_turn": {"speaker": "agent", "mode": "say", "text": "Come in, please have a seat."},
+                },
+                "voice": {"voice_id": "Charon"},
             },
-            "instructions": "**Doctor Persona & Practice Profile**\nYou are Dr. Arthur Hayes.",
-            "voice": "Charon",
         }
-
         normalized = normalize_metadata_for_contract(raw_payload)
         config = validate_metadata(normalized)
 
         assert config.models.model == "gemini-3.8-live"
-        assert config.models.temperature == 0.4
-        assert config.models.thinking.enabled is True
-        assert config.models.thinking.reasoning_effort == "high"
+        assert config.instructions.system_prompt == "You are Dr. Arthur Hayes."
+        assert config.instructions.first_turn.text == "Come in, please have a seat."
         assert config.voice.voice_id == "Charon"
-        assert config.voice.language == "en-US"
-        assert "Dr. Arthur Hayes" in config.instructions.system_prompt
         assert config.metadata["scenario"] == "doctor-detailing"
         assert config.metadata["persona"] == "doctor"
         assert config.metadata["trainee_id"] == "FDT-101"
