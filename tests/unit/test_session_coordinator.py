@@ -441,8 +441,8 @@ async def test_first_turn_say():
 
 
 @pytest.mark.asyncio
-async def test_first_turn_say_fallback_to_generate_reply():
-    """Verifies that mode='say' seamlessly falls back to generate_reply when model lacks say support."""
+async def test_first_turn_say_skipped_for_sts_models():
+    """Verifies that mode='say' is skipped for STS models lacking direct say/TTS support to prevent timeouts."""
     config = make_valid_session_config(
         instructions={
             "system_prompt": "Assistant prompt",
@@ -455,7 +455,7 @@ async def test_first_turn_say_fallback_to_generate_reply():
     )
     meta_json = json.dumps(config.model_dump())
     ctx = make_mock_job_context(
-        job_id="job_say_fallback",
+        job_id="job_say_sts_skip",
         metadata_json=meta_json,
         remote_participants={"p1": make_mock_participant(identity="caller")},
     )
@@ -480,9 +480,7 @@ async def test_first_turn_say_fallback_to_generate_reply():
         await coordinator.run(ctx)
 
         mock_agent_session.say.assert_not_called()
-        mock_agent_session.generate_reply.assert_awaited_once_with(
-            instructions="Please greet the user by saying: 'Hello, how may I assist you today?'"
-        )
+        mock_agent_session.generate_reply.assert_not_called()
 
         sc = get_session_context(ctx)
         sc.cancel_watchdogs()
@@ -490,7 +488,7 @@ async def test_first_turn_say_fallback_to_generate_reply():
 
 @pytest.mark.asyncio
 async def test_first_turn_generate_reply():
-    """Verifies that mode='generate_reply' invokes session.generate_reply()."""
+    """Verifies that mode='generate_reply' invokes session.generate_reply() for models with say/TTS support."""
     config = make_valid_session_config(
         instructions={
             "system_prompt": "Assistant prompt",
@@ -511,9 +509,13 @@ async def test_first_turn_generate_reply():
     mock_agent_session.start = AsyncMock()
     mock_agent_session.say = AsyncMock()
     mock_agent_session.generate_reply = AsyncMock()
+    mock_agent_session.tts = None
+
+    mock_model = MagicMock()
+    mock_model.capabilities.supports_say = True
 
     with (
-        patch("agent_framework.core.session.ModelFactory.create_model"),
+        patch("agent_framework.core.session.ModelFactory.create_model", return_value=mock_model),
         patch("agent_framework.core.session.TurnDetectionFactory.build_turn_handling_options"),
         patch("agent_framework.core.session.ToolRegistry.build_tools_from_config", return_value=[]),
         patch("agent_framework.core.session.AgentSession", return_value=mock_agent_session),
@@ -523,6 +525,51 @@ async def test_first_turn_generate_reply():
         await coordinator.run(ctx)
 
         mock_agent_session.generate_reply.assert_awaited_once()
+        mock_agent_session.say.assert_not_called()
+
+        sc = get_session_context(ctx)
+        sc.cancel_watchdogs()
+
+
+@pytest.mark.asyncio
+async def test_first_turn_generate_reply_skipped_for_sts_models():
+    """Verifies that mode='generate_reply' is skipped for STS models lacking say/TTS support."""
+    config = make_valid_session_config(
+        instructions={
+            "system_prompt": "Assistant prompt",
+            "first_turn": {
+                "speaker": "agent",
+                "mode": "generate_reply",
+            },
+        }
+    )
+    meta_json = json.dumps(config.model_dump())
+    ctx = make_mock_job_context(
+        job_id="job_gen_reply_sts_skip",
+        metadata_json=meta_json,
+        remote_participants={"p1": make_mock_participant(identity="caller")},
+    )
+
+    mock_agent_session = MagicMock(spec=AgentSession)
+    mock_agent_session.start = AsyncMock()
+    mock_agent_session.say = AsyncMock()
+    mock_agent_session.generate_reply = AsyncMock()
+    mock_agent_session.tts = None
+
+    mock_model = MagicMock()
+    mock_model.capabilities.supports_say = False
+
+    with (
+        patch("agent_framework.core.session.ModelFactory.create_model", return_value=mock_model),
+        patch("agent_framework.core.session.TurnDetectionFactory.build_turn_handling_options"),
+        patch("agent_framework.core.session.ToolRegistry.build_tools_from_config", return_value=[]),
+        patch("agent_framework.core.session.AgentSession", return_value=mock_agent_session),
+        patch("agent_framework.core.session.Agent"),
+    ):
+        coordinator = SessionCoordinator()
+        await coordinator.run(ctx)
+
+        mock_agent_session.generate_reply.assert_not_called()
         mock_agent_session.say.assert_not_called()
 
         sc = get_session_context(ctx)
@@ -926,6 +973,14 @@ def test_create_server_default_options():
     """Verifies create_server applies production settings (health check port 8081)."""
     server = create_server()
     assert isinstance(server, AgentServer)
+    assert server._preload_modules == ["httpcore._backends.anyio", "google.genai"]
+
+
+def test_create_server_custom_preload_modules():
+    """Verifies create_server forwards custom preload_modules list."""
+    server = create_server(preload_modules=["custom_module"])
+    assert isinstance(server, AgentServer)
+    assert server._preload_modules == ["custom_module"]
 
 
 def test_create_server_custom_port_and_shutdown_timeout():

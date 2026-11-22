@@ -97,13 +97,15 @@ class GeminiLiveAdapter(ModelAdapter):
 
         # 0. Resilient model resolution for thinking models
         # On Gemini API, gemini-3.8-live disallows thinking_level; promote to extended-thinking variant
-        clean_model = model_name.lower().removeprefix("models/").removeprefix("google/")
+        clean_model = model_name.removeprefix("models/").removeprefix("google/")
         if (
-            clean_model == "gemini-3.8-live"
+            clean_model.lower() == "gemini-3.8-live"
             and session_config.models.thinking.enabled
         ):
             model_name = "gemini-3.8-live-extended-thinking"
             logger.info("Promoted 'gemini-3.8-live' to 'gemini-3.8-live-extended-thinking' due to thinking.enabled=True")
+        else:
+            model_name = clean_model
 
         # 1. Resolve API key
         api_key = (
@@ -145,15 +147,35 @@ class GeminiLiveAdapter(ModelAdapter):
         is_extended_thinking = "extended-thinking" in model_name.lower()
         if session_config.models.thinking.enabled or is_extended_thinking:
             effort_str = (session_config.models.thinking.reasoning_effort or "medium").strip().lower()
-            thinking_level = _THINKING_LEVEL_MAP.get(effort_str, types.ThinkingLevel.MEDIUM)
+            is_gemini_38 = "3.8" in model_name.lower() or is_extended_thinking
+            # Gemini 3.8 Live Extended Thinking does not support MINIMAL; map to LOW
+            if is_gemini_38 and effort_str == "minimal":
+                thinking_level = types.ThinkingLevel.LOW
+            else:
+                thinking_level = _THINKING_LEVEL_MAP.get(effort_str, types.ThinkingLevel.MEDIUM)
+
+            # Gemini Live WebSocket protocol strictly rejects setting both thinking_budget and thinking_level
+            # (WebSocket close code 1007). In Gemini 3.8, thinking_budget is deprecated and thinking_level
+            # is authoritative. Enforce strict mutual exclusivity: thinking_budget must be None when thinking_level is set.
+            thinking_budget: Optional[int]
+            if is_gemini_38 or thinking_level is not None:
+                thinking_budget = None
+                if session_config.models.thinking.budget_tokens is not None:
+                    logger.warning(
+                        f"budget_tokens={session_config.models.thinking.budget_tokens} ignored for {model_name}; "
+                        f"thinking_level={thinking_level} is authoritative and mutually exclusive on Gemini Live."
+                    )
+            else:
+                thinking_budget = session_config.models.thinking.budget_tokens
+
             thinking_config = types.ThinkingConfig(
-                thinking_budget=session_config.models.thinking.budget_tokens,
+                thinking_budget=thinking_budget,
                 thinking_level=thinking_level,
                 include_thoughts=session_config.models.thinking.include_thoughts,
             )
             logger.debug(
                 f"Configured ThinkingConfig for {model_name}: "
-                f"level={thinking_level}, budget={session_config.models.thinking.budget_tokens}, "
+                f"level={thinking_level}, budget={thinking_budget}, "
                 f"include_thoughts={session_config.models.thinking.include_thoughts}"
             )
         else:

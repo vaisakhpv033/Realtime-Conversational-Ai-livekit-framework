@@ -258,7 +258,7 @@ async def dispatch_examples():
             "provider": "gemini",
             "model": "gemini-3.8-live",
             "temperature": 0.5,
-            "thinking": {"enabled": True, "reasoning_effort": "low", "budget_tokens": 1024},
+            "thinking": {"enabled": True, "reasoning_effort": "low"},
         },
         "instructions": {
             "system_prompt": "You are Jordan, assisting {customer_name}.",
@@ -547,7 +547,7 @@ Governs the AI reasoning core, token budgets, and speech biasing.
   "thinking": {
     "enabled": false,
     "reasoning_effort": "medium",
-    "budget_tokens": 1024,
+    "budget_tokens": null,
     "include_thoughts": false
   },
   "custom_vocabulary": ["OAuth2", "Kubernetes", "gRPC", "refund"]
@@ -571,7 +571,7 @@ Governs the AI reasoning core, token budgets, and speech biasing.
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `enabled` | `bool` | Optional | `false` | Boolean | Activates Gemini thinking / reasoning mode before speech. |
 | `reasoning_effort` | `str` | Optional | `"medium"` | `'minimal'`, `'low'`, `'medium'`, `'high'` | Thinking depth and deliberation intensity. |
-| `budget_tokens` | `int` | Optional | `1024` | `>= 0` | Explicit token ceiling allocated to thinking generation. |
+| `budget_tokens` | `int` | Optional | `null` | `>= 0` | Explicit token ceiling (deprecated for Gemini 3.8/3.x; prefer `reasoning_effort`). |
 | `include_thoughts` | `bool` | Optional | `false` | Boolean | Whether internal thought traces are surfaced in worker event logs. |
 
 ---
@@ -688,9 +688,15 @@ Defines conversational initiation behavior upon room connection. In the metadata
 | `text` | `str \| null`| Conditional | `null` | Required if `mode='say'` | Exact phrase spoken immediately over WebRTC upon connection. |
 
 #### Operational Modes:
-- **`say`**: The agent speaks the exact literal text provided in `text` immediately over WebRTC.
-- **`generate_reply`**: The agent immediately queries Gemini Live to generate a contextual greeting based on the system prompt and context variables.
+- **`say`**: The agent speaks the exact literal text provided in `text` immediately over WebRTC (supported on pipeline models with TTS or models with `supports_say: true`).
+- **`generate_reply`**: The agent queries the model to generate a contextual greeting based on the system prompt and context variables (supported on pipeline models with TTS).
 - **`listen`**: The agent joins silently and waits for the caller to speak first.
+
+> [!IMPORTANT]
+> **Speech-to-Speech (STS) Models & First Message Behavior**:
+> - Native STS models like Google Gemini Live (`gemini-3.8-live` and `gemini-3.8-live-extended-thinking`) operate natively audio-to-audio without an attached Text-to-Speech (TTS) engine (`supports_say=False`).
+> - Direct `session.say()` calls fail on STS models without TTS, and synthetic `generate_reply()` calls trigger protocol timeouts (such as the 5-second `generation_created` timeout in `livekit-plugins-google`) or event loop blocks while awaiting audio playout.
+> - Per LiveKit and Gemini Live best practices, initial agent greeting messages are automatically removed/skipped on STS models lacking `say`/TTS support. The agent connects silently in listening mode, allowing natural, low-latency bidirectional voice dialogue as soon as the user speaks.
 
 #### Validation Rules:
 1. If `mode` is `"say"`, `text` **must** be provided and non-empty. `speaker` automatically normalizes to `"agent"`.
@@ -954,23 +960,25 @@ The framework integrates natively with Google Gemini Live via `livekit-plugins-g
 
 ### 4.2 Extended Thinking & Reasoning Budget Configuration
 
-Gemini 3.8 Live supports real-time reasoning prior to synthesizing audio. To enable thinking, configure `models.thinking`:
+Gemini 3.8 Live supports real-time reasoning prior to synthesizing audio via `gemini-3.8-live-extended-thinking`. To enable thinking, configure `models.thinking`:
 
 ```json
 "thinking": {
   "enabled": true,
   "reasoning_effort": "low",
-  "budget_tokens": 1024,
   "include_thoughts": false
 }
 ```
 
 - **`reasoning_effort` options**:
-  - `"minimal"`: Very fast reasoning (~100–200ms latency impact).
+  - `"minimal"`: Auto-normalized to `"low"` on Gemini 3.8 Live Extended Thinking (backend requires `"low"`, `"medium"`, or `"high"`).
   - `"low"`: Balanced reasoning for structured tool picking (~200–400ms latency impact).
   - `"medium"`: Deeper analysis for technical support (~400–700ms latency impact).
   - `"high"`: Exhaustive deliberation for complex diagnoses (~800–1200ms latency impact).
-- **`budget_tokens`**: Explicit token limit (e.g., `1024` or `2048`). Set to `0` when `enabled=false`.
+- **`budget_tokens` (Deprecated in Gemini 3.8/3.x)**:
+  - Google has deprecated the numeric `budget_tokens` parameter across Gemini 3.x in favor of the `reasoning_effort` enum (`thinking_level`).
+  - **Protocol Mutual Exclusivity**: The Gemini Live WebSocket protocol strictly rejects having both `thinking_budget` and `thinking_level` set simultaneously (causing WebSocket close error 1007: `google.genai.errors.APIError: 1007 None. You can only set only one of thinking budget and thinking level.`).
+  - In `GeminiLiveAdapter`, `thinking_level` is authoritative and `thinking_budget` is set to `None` for all Gemini 3.8 models, ensuring clean WebSocket handshakes without protocol rejection.
 
 ### 4.3 Dynamic Model Promotion Behavior
 
@@ -1255,7 +1263,6 @@ Demonstrating all schema sections configured for a high-volume enterprise deploy
     "thinking": {
       "enabled": true,
       "reasoning_effort": "low",
-      "budget_tokens": 1024,
       "include_thoughts": false
     },
     "custom_vocabulary": [
@@ -1407,7 +1414,6 @@ Available in repository at: `examples/customer_support/support_metadata.json`
     "thinking": {
       "enabled": true,
       "reasoning_effort": "low",
-      "budget_tokens": 1024,
       "include_thoughts": false
     },
     "custom_vocabulary": [
@@ -1565,7 +1571,6 @@ Available in repository at: `examples/appointment_booking/booking_metadata.json`
     "thinking": {
       "enabled": false,
       "reasoning_effort": "minimal",
-      "budget_tokens": 0,
       "include_thoughts": false
     },
     "custom_vocabulary": [
@@ -1748,7 +1753,6 @@ Available in repository at: `examples/virtual_receptionist/receptionist_metadata
     "thinking": {
       "enabled": false,
       "reasoning_effort": "minimal",
-      "budget_tokens": 0,
       "include_thoughts": false
     },
     "custom_vocabulary": [

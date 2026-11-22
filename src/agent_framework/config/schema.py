@@ -74,10 +74,10 @@ class ThinkingConfig(BaseModel):
         default="medium",
         description="Thinking level: 'minimal', 'low', 'medium', 'high'",
     )
-    budget_tokens: int = Field(
-        default=1024,
+    budget_tokens: Optional[int] = Field(
+        default=None,
         ge=0,
-        description="Explicit token budget for thinking models",
+        description="Explicit token budget for thinking models (deprecated in Gemini 3.8/3.x; prefer reasoning_effort)",
     )
     include_thoughts: bool = Field(
         default=False,

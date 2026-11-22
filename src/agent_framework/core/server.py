@@ -16,6 +16,9 @@ from agent_framework.core.session import SessionCoordinator
 
 logger = logging.getLogger("agent_framework.core.server")
 
+# Default preloaded modules to eliminate runtime event loop freezes on worker process initialization
+DEFAULT_PRELOAD_MODULES: list[str] = ["httpcore._backends.anyio", "google.genai"]
+
 
 def create_server(
     settings: Optional[FrameworkSettings] = None,
@@ -27,6 +30,7 @@ def create_server(
     drain_timeout: Optional[float] = None,
     prometheus_port: Optional[int] = None,
     log_level: Optional[str] = None,
+    preload_modules: Optional[list[str]] = None,
     **kwargs: Any,
 ) -> AgentServer:
     """Creates a configured LiveKit AgentServer instance.
@@ -43,6 +47,9 @@ def create_server(
         drain_timeout: Timeout in seconds for graceful active call draining before shutdown.
         prometheus_port: Optional port for Prometheus metrics exporter.
         log_level: Logging verbosity level for the LiveKit worker.
+        preload_modules: Optional list of modules to preload before job execution,
+            preventing runtime event loop import freezes. Defaults to
+            ["httpcore._backends.anyio", "google.genai"].
         **kwargs: Additional parameters forwarded to AgentServer.
 
     Returns:
@@ -77,12 +84,17 @@ def create_server(
         if log_level is not None
         else effective_settings.livekit_log_level
     )
+    resolved_preload_modules = (
+        preload_modules
+        if preload_modules is not None
+        else kwargs.pop("preload_modules", DEFAULT_PRELOAD_MODULES.copy())
+    )
 
     logger.info(
         f"Initializing AgentServer: host='{resolved_host}', port={resolved_port}, "
         f"shutdown_timeout={resolved_shutdown_timeout}s, drain_timeout={resolved_drain_timeout}s, "
         f"load_threshold={resolved_load_threshold}, log_level='{resolved_log_level}', "
-        f"prometheus_port={resolved_prometheus_port}"
+        f"prometheus_port={resolved_prometheus_port}, preload_modules={resolved_preload_modules}"
     )
 
     server_kwargs: dict[str, Any] = {
@@ -92,6 +104,7 @@ def create_server(
         "load_threshold": resolved_load_threshold,
         "drain_timeout": int(resolved_drain_timeout),
         "log_level": resolved_log_level,
+        "preload_modules": resolved_preload_modules,
     }
     if "ws_url" not in kwargs and effective_settings.livekit_url:
         server_kwargs["ws_url"] = effective_settings.livekit_url

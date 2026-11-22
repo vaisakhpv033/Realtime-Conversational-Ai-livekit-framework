@@ -64,7 +64,7 @@ def create_test_session_config(
     modalities: Optional[list[str]] = None,
     thinking_enabled: bool = False,
     reasoning_effort: str = "medium",
-    budget_tokens: int = 1024,
+    budget_tokens: Optional[int] = None,
     include_thoughts: bool = False,
     custom_vocabulary: Optional[list[str]] = None,
     voice_id: str = "Aoede",
@@ -263,14 +263,14 @@ class TestThinkingConfiguration:
     @pytest.mark.parametrize(
         "effort_str, expected_level",
         [
-            ("minimal", types.ThinkingLevel.MINIMAL),
+            ("minimal", types.ThinkingLevel.LOW),
             ("low", types.ThinkingLevel.LOW),
             ("medium", types.ThinkingLevel.MEDIUM),
             ("high", types.ThinkingLevel.HIGH),
         ],
     )
     def test_thinking_level_translation(self, effort_str, expected_level):
-        """Verify reasoning_effort string maps to correct ThinkingLevel enum."""
+        """Verify reasoning_effort string maps to correct ThinkingLevel enum and thinking_budget is None."""
         config = create_test_session_config(
             thinking_enabled=True,
             reasoning_effort=effort_str,
@@ -284,7 +284,7 @@ class TestThinkingConfiguration:
         assert tc is not NOT_GIVEN
         assert isinstance(tc, types.ThinkingConfig)
         assert tc.thinking_level == expected_level
-        assert tc.thinking_budget == 2048
+        assert tc.thinking_budget is None
         assert tc.include_thoughts is True
 
     def test_extended_thinking_model_auto_enabled(self):
@@ -302,7 +302,32 @@ class TestThinkingConfiguration:
         assert tc is not NOT_GIVEN
         assert isinstance(tc, types.ThinkingConfig)
         assert tc.thinking_level == types.ThinkingLevel.LOW
-        assert tc.thinking_budget == 1024
+        assert tc.thinking_budget is None
+
+    def test_gemini_38_thinking_budget_mutual_exclusivity(self):
+        """Verify thinking_budget is strictly None when thinking_level is set, enforcing WebSocket protocol mutual exclusivity."""
+        config = create_test_session_config(
+            model="gemini-3.8-live-extended-thinking",
+            thinking_enabled=True,
+            reasoning_effort="high",
+            budget_tokens=4096,
+        )
+        model = ModelFactory.create_model(config)
+        tc = model._opts.thinking_config
+        assert tc.thinking_level == types.ThinkingLevel.HIGH
+        assert tc.thinking_budget is None
+
+    def test_gemini_38_minimal_effort_normalized_to_low(self):
+        """Verify reasoning_effort='minimal' is normalized to LOW for Gemini 3.8 extended thinking."""
+        config = create_test_session_config(
+            model="gemini-3.8-live-extended-thinking",
+            thinking_enabled=True,
+            reasoning_effort="minimal",
+        )
+        model = ModelFactory.create_model(config)
+        tc = model._opts.thinking_config
+        assert tc.thinking_level == types.ThinkingLevel.LOW
+        assert tc.thinking_budget is None
 
     def test_standard_model_thinking_not_given(self):
         """Verify standard models without thinking enabled leave thinking_config as NOT_GIVEN."""
@@ -334,6 +359,24 @@ class TestThinkingConfiguration:
         assert model._opts.model == "gemini-3.8-live-extended-thinking"
         assert model._opts.thinking_config is not NOT_GIVEN
         assert model._opts.thinking_config.thinking_level == types.ThinkingLevel.HIGH
+
+    @pytest.mark.parametrize(
+        "model_input, expected_model",
+        [
+            ("google/gemini-3.8-live", "gemini-3.8-live"),
+            ("models/gemini-3.8-live", "gemini-3.8-live"),
+            ("google/gemini-3.8-live-extended-thinking", "gemini-3.8-live-extended-thinking"),
+            ("models/gemini-3.8-live-extended-thinking", "gemini-3.8-live-extended-thinking"),
+        ],
+    )
+    def test_prefixed_model_normalized_without_thinking(self, model_input, expected_model):
+        """Verify google/ and models/ prefixes are stripped for clean API model endpoints."""
+        config = create_test_session_config(
+            model=model_input,
+            thinking_enabled=False,
+        )
+        model = ModelFactory.create_model(config)
+        assert model._opts.model == expected_model
 
 
 # ==============================================================================
