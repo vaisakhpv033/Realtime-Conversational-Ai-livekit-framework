@@ -689,3 +689,25 @@ class TestTurnDetectionFactory:
         # AgentSession initialization with TurnHandlingOptions must not raise
         session = AgentSession(turn_handling=th)
         assert session is not None
+
+
+class TestDualLanguageASR:
+    """Verify VoiceConfig.extra_languages flows through to Gemini Live ASR."""
+
+    def test_voice_extra_languages_forwarded_to_asr(self):
+        config = create_test_session_config(language="en-IN")
+        object.__setattr__(
+            config,
+            "voice",
+            VoiceConfig(
+                provider="gemini",
+                voice_id="Fenrir",
+                language="en-IN",
+                extra_languages=["hi-IN", "en-IN"],
+            ),
+        )
+        assert config.voice.extra_languages == ["hi-IN", "en-IN"]
+
+        model = ModelFactory.create_model(config)
+        assert model._opts.input_audio_transcription.language_codes == ["en-IN", "hi-IN"]
+        assert model._opts.output_audio_transcription.language_codes == ["en-IN", "hi-IN"]

@@ -315,6 +315,10 @@ class VoiceConfig(BaseModel):
         default="en-US",
         description="BCP-47 language tag for synthesis and ASR language locking",
     )
+    extra_languages: list[str] = Field(
+        default_factory=list,
+        description="Additional BCP-47 language tags for multilingual ASR locking (e.g. ['hi-IN'] for Hinglish)",
+    )
     speed: float = Field(
         default=1.0,
         gt=0.0,
@@ -349,6 +353,20 @@ class VoiceConfig(BaseModel):
             raise ValueError("language cannot be empty")
         from agent_framework.config.settings import settings
         return settings.resolve_bcp47_language(clean)
+
+    @field_validator("extra_languages")
+    @classmethod
+    def validate_extra_languages(cls, v: list[str]) -> list[str]:
+        from agent_framework.config.settings import settings
+        resolved: list[str] = []
+        for item in v:
+            clean = (item or "").strip()
+            if not clean:
+                continue
+            tag = settings.resolve_bcp47_language(clean)
+            if tag not in resolved:
+                resolved.append(tag)
+        return resolved
 
 
 # ==============================================================================

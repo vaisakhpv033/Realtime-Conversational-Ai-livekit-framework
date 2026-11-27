@@ -127,10 +127,14 @@ class GeminiLiveAdapter(ModelAdapter):
 
         # 3. Resolve BCP-47 language & locked ASR language codes
         bcp47_language = settings.resolve_bcp47_language(session_config.voice.language)
-        extra_languages = merged_kwargs.pop("extra_languages", None)
+        kwarg_extra_languages = merged_kwargs.pop("extra_languages", None) or []
+        combined_extra_languages = [
+            *(session_config.voice.extra_languages or []),
+            *kwarg_extra_languages,
+        ]
         asr_language_codes = settings.resolve_asr_language_codes(
             language_code=session_config.voice.language,
-            extra_languages=extra_languages,
+            extra_languages=combined_extra_languages or None,
         )
 
         # 4. Context Window Compression: 50,000-token sliding window
